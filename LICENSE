@@ -1,0 +1,29 @@
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 2, June 1991
+
+ Copyright (C) 1989, 1991 Free Software Foundation, Inc.,
+ 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+This project is licensed under the GNU General Public License, version 2
+or (at your option) any later version. The full license text is available
+at <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
+
+Step 5 of the installer (`05-fix-cellular.sh`) constructs a modified
+copy of `/usr/sbin/ofonod` (ofono-sailfish 1.29+git12, GPL-2.0) on the
+user's own device using documented byte-offset patches. The patches
+themselves are derived from analysis of GPL-licensed upstream sources
+(ofono, ofono-binder-plugin, libgbinder-radio); see `installer/README.md`
+and inline comments in `05-fix-cellular.sh` for the corresponding source
+references. To honor the upstream licensing chain, this repository is
+released under GPL-2.0-or-later.
+
+Upstream component sources:
+  - ofono / ofono-sailfish:   https://github.com/sailfishos/ofono
+  - ofono-binder-plugin:      https://github.com/mer-hybris/ofono-binder-plugin
+  - libgbinder-radio:         https://github.com/mer-hybris/libgbinder-radio
+
+External tools fetched by the installer at runtime keep their own
+licenses (bkerler/edl: GPL-3.0; bkerler/oppo_decrypt: GPL-3.0;
+Magisk magiskboot binary: GPL-3.0; Android platform-tools: Apache-2.0).

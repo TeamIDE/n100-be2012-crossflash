@@ -1,0 +1,157 @@
+# n100-be2012-crossflash
+
+Reproducible installer that takes a **carrier-locked OnePlus Nord N100
+BE2012 (T-Mobile US)** and lands it on **Ubuntu Touch 24.04 (noble)**.
+Driven entirely from **macOS** — no Windows, no MSMDownloadTool, no
+borrowed PC.
+
+If you have a BE2013 (Global) or BE83BA (EU) N100, **use the stock
+[UBports installer](https://devices.ubuntu-touch.io/installer/)
+instead.** This repo exists for the BE2012 SKU specifically, which the
+stock installer rejects as "device not supported."
+
+## Why this is a separate installer
+
+The BE2012 trips four locks the stock UBports installer doesn't handle:
+
+1. **`ro.product.name` is `OnePlusN100TMO`** — the stock installer
+   only recognises `OnePlusN100`, so it refuses to start.
+2. **`fastboot flashing unlock` is gated** by T-Mobile carrier shim
+   apps holding `sys.oem_unlock_allowed=0`.
+3. **The recovery's gpg 1.4.13 (2012) can't verify modern SHA512 sigs
+   on UT system images** — every install attempt with stock recovery
+   fails at the keyring step.
+4. **Modem firmware ↔ ofono SIM-init incompatibility** — even after
+   the steps above, ofono `sim_pin_query_cb` early-returns on a PIN
+   auth error from the modem, leaving `Modem.Features` stuck at
+   `['sim']`: no IMSI, no `NetworkRegistration`, no cellular.
+
+This installer walks past all four:
+
+| Step | What | How |
+| --- | --- | --- |
+| 1 | Cross-flash to BE2013 Global | macOS-native EDL/Firehose driver (`flash_xml.py`) using `bkerler/edl` + OnePlus's signed Firehose loader. Skips the patched-MSM project-ID hack because we never implement the host-side guard. |
+| 2 | Bootloader unlock | Remove five OnePlus carrier-shim apps via `pm uninstall --user 0`. Flips `sys.oem_unlock_allowed` from 0 → 1; `fastboot flashing unlock` then works. |
+| 2b | Modem re-flash | Put the BE82CB (T-Mobile US) `NON-HLOS.bin` back over the BE2013 modem. The BE2013 Global modem returns `iccIOForApp INTERNAL_ERR` against modern Halium-9 ofono until the patches in step 5 are in place — easier to just keep the T-Mobile-tuned modem from the start. Optional: skip this and use BE2013 modem (works fine with step 5 patches in place — see `installer/diagnostic/`). |
+| 3 | Recovery + partition layout | Flash rubencarneiro UBports boot/recovery/dtbo, patched vbmeta (flags 0x3, verification off), resize `system_a` to 3 GB. |
+| 4 | Install Ubuntu Touch | `magiskboot` (extracted from Magisk APK) repacks the recovery on-device with `system-image-upgrader` patched to skip GPG verification and `gpg` stubbed. Auto-install proceeds normally. |
+| 5 | Cellular fix | Three-byte binary patch on `/usr/sbin/ofonod` (ofono-sailfish 1.29+git12). Hijacks the `sim_pin_query_cb` error path: instead of "log error and return," set `pin_type = OFONO_SIM_PASSWORD_NONE` and jump to the success continuation. SIM state machine advances, IMSI reads, `Features` → `['gprs','rat','ussd','net','cbs','stk','sms','sim']`. |
+
+After step 5 the device runs Ubuntu Touch with a complete SIM stack.
+Cellular *attach* additionally depends on SIM ↔ carrier ↔ band match
+(see "Cellular caveats" in `installer/README.md`).
+
+## Requirements
+
+| Need | Why |
+| --- | --- |
+| **OnePlus Nord N100, model BE2012** | This installer is specific to this SKU. |
+| **macOS** (Apple Silicon ok) | Tested on macOS 26.2; Intel Macs should work but untested. |
+| **Python 3.10+**, `brew install libusb` | EDL Firehose client. |
+| **USB-C data cable** (not charge-only) | EDL + fastboot. |
+| **~13 GB free disk** | BE2013 firmware (~2.5 GB) + BE82CB firmware (~2.5 GB) + UT system-image (~600 MB) + scratch. |
+| **Network** | Downloads firmware + UT system-image files. |
+| **BE82CB.zip** (T-Mobile OnePlus N100 firmware, `bengal_14_O.04_201221`) | Needed by step 2b. The .zip is not redistributable — obtain it from a BE82CB device or a firmware archive. Place at `firmware/BE82CB.zip` or set `BE82CB_ZIP=<path>`. |
+
+## Usage
+
+```bash
+git clone https://github.com/dcherrera/n100-be2012-crossflash
+cd n100-be2012-crossflash
+
+# Step 0 — install deps, clone bkerler/edl + oppo_decrypt, fetch firmware
+./installer/00-prep.sh
+
+# Step 1 — cross-flash BE2012 → BE2013 (EDL mode, ~10 min)
+./installer/01-cross-flash.sh
+
+# Step 2 — unlock bootloader (after OOS first-boot + Google account)
+./installer/02-unlock-bootloader.sh
+
+# Step 2b — re-flash BE82CB modem (after post-unlock OOS first-boot)
+./installer/02b-fix-modem.sh
+
+# Step 3 — recovery + partition reshape
+./installer/03-bootstrap-recovery.sh
+
+# Step 4 — install Ubuntu Touch (~5 min)
+./installer/04-install-ut.sh
+
+# Step 5 — fix the SIM-init blocker (after UT first-boot + lock PIN set)
+./installer/05-fix-cellular.sh
+```
+
+Each script is idempotent. See `installer/README.md` for per-step
+detail (entering EDL, what to do during OOS first-boot, Wi-Fi reboot
+fix, cellular caveats, etc.).
+
+## What's in the repo
+
+```
+.
+├── README.md                          # you are here
+├── LICENSE                            # GPL-2.0-or-later
+├── notes.md                           # original investigation notes
+├── RECIPE.md                          # early macOS recipe (superseded by installer/)
+├── flash.py                           # firmware-prep helper (legacy)
+├── flash_xml.py                       # cross-flash driver — XML-driven EDL/Firehose
+└── installer/
+    ├── README.md                      # per-step detail + cellular notes
+    ├── 00-prep.sh ... 05-fix-cellular.sh
+    ├── lib/common.sh                  # shared helpers
+    └── diagnostic/                    # research scripts (not part of normal install)
+        ├── swap-to-be2013-modem.sh    # switch the modem to BE2013 Global
+        └── swap-to-be82cb-modem.sh    # switch back to BE82CB T-Mobile
+```
+
+External tools (`tools/edl`, `tools/oppo_decrypt`), the Python venv
+(`venv/`), the Android platform-tools (`host-tools/platform-tools/`),
+and large firmware downloads (`firmware/`, `downloads/`) are all
+fetched by `00-prep.sh` at runtime and gitignored.
+
+## Reverse path — getting back to stock
+
+Each step is reversible up to a point:
+
+- **Before step 1:** unplug the cable. The phone is unchanged.
+- **After step 1, before step 2:** flash BE82CB stock via the BE82CB
+  unbrick tool (XDA: `opn100-oos-tmo-be82cb-unbrick-tool`).
+- **After step 2 (bootloader unlocked):** same, plus you may need to
+  re-lock the bootloader manually.
+- **After step 4 (UT installed):** flash BE82CB unbrick tool. UT is
+  wiped, you're back on T-Mobile OOS.
+
+The original device-unique partitions (`modemst1`, `modemst2`, `fsg`,
+`fsc`, `keystore`, `persist`, etc.) are backed up by step 1 to
+`backup/be2012_pre_crossflash/` and can be re-flashed via
+`flash_xml.py` if needed.
+
+## Status of common features after this install
+
+| Feature | Works? |
+| --- | --- |
+| Wi-Fi | Yes (long-press Power → Restart after first boot, then fine) |
+| Bluetooth | Yes |
+| Cellular SIM read (IMSI, ICCID, SubscriberNumbers) | Yes, with step 5 patches |
+| Cellular network registration | Depends on SIM ↔ modem-band match. T-Mobile-network SIMs work; Verizon-provisioned SIMs read fine but won't sustain attach (IMEI not on Verizon's CDLC + modem firmware is T-Mobile-band tuned). |
+| Mobile hotspot | Should work post-cellular (UT 24.04-1.1+ has the Halium-9 hotspot fix). Not yet empirically tested on this device — pending a working SIM. |
+| Camera, audio, sensors | Yes (per upstream billie2 noble port) |
+| VoLTE | Needs T-Mobile to whitelist the device IMEI. Plan on a support chat. |
+
+## Acknowledgements
+
+- **`bkerler/edl`** and **`bkerler/oppo_decrypt`** — the EDL Firehose
+  client and OnePlus `.ops` decoder. This installer is essentially a
+  driver around these tools.
+- **`rubencarneiro/billie2`** — the boot/recovery/dtbo images the
+  bootstrap step flashes.
+- The **BE2015 (Metro) UBports forum thread** —
+  [forums.ubports.com/topic/11194](https://forums.ubports.com/topic/11194/oneplus-nord-n100-metropcs-be2015-install-success)
+  — for documenting the same install path on the sibling carrier SKU.
+- **UBports** — for Ubuntu Touch, including the billie2 community port
+  and the 24.04 noble channel.
+
+## Status
+
+Tested end-to-end on a single BE2012 unit (T-Mobile US, Apple Silicon
+host, macOS 26.2). Reproductions, issue reports, and PRs welcome.

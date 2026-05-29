@@ -1,0 +1,32 @@
+# Downloaded firmware (large, not redistributable)
+firmware/
+downloads/
+
+# Device-unique partition backups (contain IMEI, RF calibration, etc.)
+backup/
+
+# Per-run state — patched binaries pulled from the device, step markers,
+# vbmeta scratch, etc. Always device-specific or regenerable.
+installer/state/
+
+# External tool clones — bootstrapped by 00-prep.sh
+tools/
+host-tools/
+
+# Python venv
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS junk
+.DS_Store
+
+# Editor leavings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local config that contains absolute paths or per-run identifiers
+edl_config.json
