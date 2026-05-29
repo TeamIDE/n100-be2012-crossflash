@@ -108,6 +108,9 @@ This installer is one of many. A few others:
 [teamide.dev/contact](https://teamide.dev/contact) for project
 inquiries and engagement scoping.
 
+For quick questions, lower-stakes chatter, or just to see what we're
+working on, find us in [Discord](https://discord.gg/YVcsHXSCYG).
+
 For open issues against *this specific repo*, please use
 [GitHub issues](https://github.com/dcherrera/n100-be2012-crossflash/issues) —
 keeps the technical thread public and discoverable.

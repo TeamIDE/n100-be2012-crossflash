@@ -2,6 +2,8 @@
 
 > A [TeamIDE](https://teamide.dev) project. If this saved you a phone, [chip in](https://teamide.dev/support).
 
+Join the community on [Discord](https://discord.gg/YVcsHXSCYG) · Follow on [X](https://x.com/TeamIDElab) · Subreddit: [r/TeamIDELabs](https://www.reddit.com/r/TeamIDELabs/) · YouTube: [@TeamIDElabs](https://www.youtube.com/@TeamIDElabs).
+
 > **Read this before you do anything.** This is not a user-friendly
 > installer. It is a research record of how we cracked one specific
 > carrier-locked SKU, written up so other people with the same model
@@ -263,6 +265,7 @@ shape of what we ship.
 ---
 
 <sub>A [TeamIDE](https://teamide.dev) project &nbsp;·&nbsp;
+[Discord](https://discord.gg/YVcsHXSCYG) &nbsp;·&nbsp;
 [Products](https://teamide.dev/products) &nbsp;·&nbsp;
 [Portfolio](https://dcherrera-portfolio-main.teamide.dev/) &nbsp;·&nbsp;
 [Contact](https://teamide.dev/contact) &nbsp;·&nbsp;
