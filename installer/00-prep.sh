@@ -8,6 +8,8 @@ say "checking host tooling"
 require_cmd brew
 require_cmd python3
 require_cmd curl
+require_cmd git
+require_cmd unzip
 
 if ! brew list libusb >/dev/null 2>&1; then
   say "installing libusb (needed by bkerler/edl)"
@@ -19,8 +21,15 @@ TOOLS_DIR="$REPO_DIR/tools"
 mkdir -p "$TOOLS_DIR"
 
 if [[ ! -d "$TOOLS_DIR/edl/.git" ]]; then
-  say "cloning bkerler/edl (Qualcomm Firehose client)"
-  git clone --depth 1 https://github.com/bkerler/edl "$TOOLS_DIR/edl"
+  say "cloning bkerler/edl + Loaders submodule (Qualcomm Firehose client)"
+  # --recurse-submodules is REQUIRED: the signed Firehose loaders live in
+  # the bkerler/Loaders submodule. Without it, step 1 (cross-flash) fails
+  # because the OnePlus N100 loader is missing.
+  git clone --depth 1 --recurse-submodules --shallow-submodules \
+    https://github.com/bkerler/edl "$TOOLS_DIR/edl"
+elif [[ ! -f "$TOOLS_DIR/edl/Loaders/oneplus/0000000000515192_37cf317812121fed_fhprg_opn100.bin" ]]; then
+  say "edl present but Loaders submodule missing — fetching"
+  ( cd "$TOOLS_DIR/edl" && git submodule update --init --depth 1 Loaders )
 fi
 if [[ ! -d "$TOOLS_DIR/oppo_decrypt/.git" ]]; then
   say "cloning bkerler/oppo_decrypt (OnePlus .ops unpacker)"

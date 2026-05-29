@@ -151,6 +151,50 @@ The original device-unique partitions (`modemst1`, `modemst2`, `fsg`,
 - **UBports** — for Ubuntu Touch, including the billie2 community port
   and the 24.04 noble channel.
 
+## Known-good snapshot
+
+| Component | Pinned to | Notes |
+| --- | --- | --- |
+| Host OS | macOS 26.2 (Apple Silicon) | Intel Macs should work but untested. |
+| Python | 3.10+ | venv built into stdlib. |
+| Ubuntu Touch channel | `24.04-1.x/arm64/android9plus/daily` | Set in `installer/lib/common.sh`. Switch to `release` for less drift if/when stable. |
+| UT build tested | 543, 2026-05-28 | ofonod size 1,824,688 bytes (ofono-sailfish 1.29+git12). |
+| `bkerler/edl` | tip of `main` at install time | The OnePlus N100 Firehose loader is in the `Loaders` submodule — `00-prep.sh` clones with `--recurse-submodules`. |
+| `bkerler/oppo_decrypt` | tip of `main` at install time | OnePlus `.ops` unpacker. |
+| `rubencarneiro/billie2` | release `1.0` | boot/recovery/dtbo/vbmeta images. |
+| `Magisk` | `v28.1` | only used for the `magiskboot.arm64` binary inside the APK. |
+| BE2013 firmware | OnePlus_Nord_N100_Global_OxygenOS_10.5.3.zip (~2.5 GB) | Mirror: `onepluscommunityserver.com`. XDA backup at `4769390`. |
+| BE82CB firmware | `bengal_14_O.04_201221` (~2.5 GB) | Not redistributable — user supplies. |
+
+### What rots first
+
+The `05-fix-cellular.sh` ofonod offsets (`0x10b8f4`, `0xe1e94`,
+`0xe1e98`) are valid only for the specific ofono build above. The
+script asserts the file size and the bytes at each offset before
+patching — if either differs, it refuses rather than corrupt the
+binary. If you hit that, either:
+
+1. Pin UT to the build above by editing `SYSIMG_CHANNEL` in
+   `installer/lib/common.sh` (rough — locks you out of UT updates), or
+2. Re-derive the offsets against the new ofonod binary. The patch
+   sites are:
+   - **EHPLMN (cosmetic):** `simfs_op_check_structure_cb` xref to the
+     "Requested file structure differs from SIM: %x" string. The b.ne
+     that takes the error path. Replace with `nop`.
+   - **PIN-auth (functional):** `sim_pin_query_cb` xref to the
+     "Querying PIN authentication state failed" string. Find the
+     `adrp x0, <string>` + `add x0, x0, <off>` pair at the error path
+     entry. Replace those two instructions with `mov w23, #0` and `b
+     <success-continuation>`. The success continuation is the
+     immediately-following success-path label that loads
+     `[x21, #0x24]` (sim->pin_type). See inline comments in
+     `installer/05-fix-cellular.sh` for the full rationale.
+
+The cleaner long-term fix is to land the same logic upstream in
+`ofono-binder-plugin` (treat the QMI/binder INTERNAL_ERR response on
+QueryPinAuthState as `pin_type=NONE` rather than propagating the
+error). PRs welcome.
+
 ## Status
 
 Tested end-to-end on a single BE2012 unit (T-Mobile US, Apple Silicon
