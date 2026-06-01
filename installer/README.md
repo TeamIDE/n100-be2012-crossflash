@@ -67,10 +67,23 @@ Each script is idempotent — safe to re-run.
 # 7. Fix the SIM-init blockers in ofono (~30 seconds).
 #    Run after UT first-boot, after you've set a UT lock-screen PIN.
 ./05-fix-cellular.sh
+
+# 8. Stop adb from dropping every few seconds while plugged in (~10 seconds).
+#    Halium's Android USB HAL races with usb-moded on charger renegotiation
+#    events. Pass -i to usb-moded so it ignores them.
+./06-fix-usb-stability.sh
+
+# 9. Keep Wi-Fi alive across reboots (~10 seconds).
+#    An Android wifi HAL service zeroes /vendor/persist/wlan_mac.bin at
+#    every boot; the kernel driver then defaults to a multicast MAC and
+#    refuses to bring wlan0 up. A systemd oneshot restores the file +
+#    reloads qca_cld3_wlan before NetworkManager runs.
+./07-fix-wifi-mac-persistence.sh
 ```
 
 After step 6, the device boots into Ubuntu Touch first-run.
-Step 7 is what actually makes cellular work.
+Steps 7-9 fix cellular, USB stability, and Wi-Fi persistence —
+without them, the post-install daily-use experience is broken.
 
 ### Post-install: reboot once before using Wi-Fi
 
@@ -82,6 +95,73 @@ install path.
 **Fix: long-press Power → Restart.** Wi-Fi works normally after the
 second boot. Confirmed on our BE2012 unit; widely reported across
 halium devices.
+
+### Wi-Fi MAC persistence (step 9)
+
+After a reboot, `nmcli device` shows wlan0 as `unavailable` and no
+networks are reachable. `dmesg` shows:
+
+```
+icnss ... loading wlan/qca_cld/wlan_mac.bin failed with error -22
+wlan: ... hdd_initialize_mac_address: using default MAC address
+wlan: ... MAC is Multicast (via hdd_open_adapter)
+wlan: ... Failed to open interfaces: -28
+```
+
+`/android/mnt/vendor/persist/wlan_mac.bin` is 0 bytes — an Android
+wifi HAL service opens it for write at boot and truncates it, but
+fails to write the regenerated MAC table. The next driver probe
+defaults to an all-zero (multicast) MAC, which the kernel refuses
+for station mode, and wlan0 never comes up.
+
+`./07-fix-wifi-mac-persistence.sh` extracts the original 120-byte
+`wlan_mac.bin` from `backup/be2012_pre_crossflash/persist.img`
+(captured before the cross-flash), stashes it at
+`/var/lib/wlan-mac-fix/`, and installs a systemd oneshot
+(`wlan-mac-fix.service`) that runs before NetworkManager. The unit:
+
+1. Compares the device's `wlan_mac.bin` size against the stashed copy.
+2. If different, copies the stashed copy back, then `rmmod wlan` and
+   `insmod /android/system/vendor/lib/modules/qca_cld3_wlan.ko` so the
+   driver re-reads the MAC.
+3. `ip link set wlan0 up` for good measure.
+
+> **Don't `chattr +i` the file.** Locking it works as a "stop the
+> truncation" fix on the surface, but the Android wifi HAL's boot
+> sequence then aborts when its truncate fails, and wlan0 never gets
+> brought up properly. The systemd-restore approach lets the HAL do
+> its (broken) thing, then fixes things up before NM cares.
+
+### USB adb stability (step 8)
+
+After install, `adb devices` may show the phone briefly then drop
+every few seconds, repeatedly. `dmesg` on the device shows tight
+cycles:
+
+```
+USB_STATE=CONNECTED → CONFIGURED → DISCONNECTED → CONNECTED → CONFIGURED
+```
+
+always immediately after the PMI632 charger renegotiates the input
+current limit (e.g. 1.35A → 1.5A).
+
+Two subsystems are simultaneously managing the configfs USB gadget:
+host-side `usb-moded` and the Halium Android container's
+`android.hardware.usb@1.1-service-qti`. When the charger renegotiates
+and the Android HAL emits a USB-state change event, usb-moded
+mistakes it for a disconnect, tears the gadget down, and renegotiates
+from scratch. adb on the host sees that as a connection drop.
+
+`./06-fix-usb-stability.sh` drops `/etc/default/usb-moded.d/zzz-android-broken-udev-events.conf`
+which sets `USB_MODED_ARGS=-i`. The `-i` flag
+(`--android_usb_broken_udev_events`) tells usb-moded to ignore these
+spurious events.
+
+> **Filename gotcha:** the billie2 port ships
+> `device-specific-config.conf` which sets `USB_MODED_ARGS=` (empty).
+> systemd's `EnvironmentFile` processes files alphabetically;
+> later files override earlier ones. Our override must sort *after*
+> `device-`, hence `zzz-`, not `99-` (digit `9` sorts before letter `d`).
 
 ### Cellular: software stack fix (step 5)
 
