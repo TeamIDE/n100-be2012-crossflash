@@ -21,9 +21,26 @@ state_done unlock || die "run ./02-unlock-bootloader.sh first"
 say "waiting for adb"
 wait_for adb 600
 
+# Reboot path differs by source OS:
+#   - From OOS (Android): `adb reboot bootloader` works as the unprivileged
+#     shell user. Only used the first time through the installer.
+#   - From UT (Ubuntu): adb runs as `phablet`, which doesn't own the
+#     bootloader trigger file. Need sudo. The UT lock-screen PIN is the
+#     sudo password (export UT_PIN to skip the prompt).
+reboot_to_bootloader() {
+  if adb reboot bootloader 2>&1 | grep -q "Permission denied"; then
+    if [[ -z "${UT_PIN:-}" ]]; then
+      read -rp "UT lock-screen PIN (sudo on the device): " -s UT_PIN
+      echo
+      export UT_PIN
+    fi
+    adb shell -T "echo '$UT_PIN' | sudo -S reboot bootloader" >/dev/null 2>&1 || true
+  fi
+}
+
 # --- Reboot to bootloader-fastboot ------------------------------------------
 say "rebooting to bootloader"
-adb reboot bootloader
+reboot_to_bootloader
 wait_for fastboot 60
 
 UNLOCKED="$(fastboot getvar unlocked 2>&1 | grep -oE 'unlocked: [a-z]+' | cut -d' ' -f2)"
